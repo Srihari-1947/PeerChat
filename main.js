@@ -29,7 +29,7 @@ let init= async() =>
         
         client.on('MessageFromPeer',handleMessageFromPeer)
 
-        localstream= await navigator.mediaDevices.getUserMedia({video:true,audio:true})
+        localstream= await navigator.mediaDevices.getUserMedia({video:true,audio:false})
         document.getElementById("user-1").srcObject= localstream
        
     } 

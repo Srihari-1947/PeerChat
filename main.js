@@ -1,11 +1,81 @@
-let APP_ID="aa2b80fd5bc542b8b23b9b4d7bf327cf"
-let token=null;
-
 let uid=String(Math.floor(Math.random()*10000))
 let localstream;
 let remotestream;
 let peerconnection;
+let client;
+let sendMessage;
 
+let Member_Id = uid
+
+const createWebSocketClient= async(url,memberId) => {
+
+    let websocket = null;
+
+   const connect= async()=>{
+        websocket = new WebSocket(url)
+
+        websocket.addEventListener('open', onOpen);
+        websocket.addEventListener('message', onMessage);
+        websocket.addEventListener('close', onClose);
+        websocket.addEventListener('error', onError);
+    }
+
+    const register= async()=>{
+        const registrationMessage = {'member_id': memberId}
+        sendMessage(registrationMessage)
+    }
+
+    const sendMessage= async(message)=>{
+        if(websocket.readyState == WebSocket.OPEN){
+            websocket.send(JSON.stringify(message))
+            console.log('sent message',JSON.stringify(message))
+        }
+        else{
+            console.error("websocket is not open")
+        }
+    }
+
+    const onOpen = () =>{
+        console.log('connected to a singalling server')
+        register()
+    }
+
+    const onMessage =async (data)=>{ 
+        let message= JSON.parse(data.data)
+        console.log('Parsed JSON object:',typeof(message.toString()),message.toString());
+        if(message.toString()!='0'){
+             
+             if((message.toString())[0]=="1")
+            {
+                console.log(message)
+                await handleUserJoined(message.toString().slice(1))
+             }
+             
+             else{
+                handleMessageFromPeer(message,message.source_id)
+                
+             }
+        }
+
+    }
+
+    const onClose=()=>{
+        console.log('disconnected from signalling server')
+    }
+
+    const onError = (error)=>{
+        console.error('WebSocket error: ',error)
+    }
+
+
+    client = {
+        connect,
+        sendMessage
+    };
+
+    return client;
+    
+}
 
 
 const servers = {
@@ -17,18 +87,9 @@ const servers = {
 }
 let init= async() => 
     {
-        client = await AgoraRTM.createInstance(APP_ID)
-        await client.login({uid,token})
-
-        channel = client.createChannel('main')
-        await channel.join()
-
-        channel.on('MemberJoined',handleUserJoined)
-
-        channel.on('MemberLeft',handleUserLeft)
-        
-        client.on('MessageFromPeer',handleMessageFromPeer)
-
+        const url = 'wss://webrtc-05ak.onrender.com/'
+        const client = await createWebSocketClient(url,Member_Id)
+        client.connect()
         localstream= await navigator.mediaDevices.getUserMedia({video:true,audio:false})
         document.getElementById("user-1").srcObject= localstream
        
@@ -38,7 +99,6 @@ let handleUserLeft = async (memberId) =>
         document.getElementById('user-2').style.display='none'
     }
 let handleMessageFromPeer = async (message,memberId) => {
-    message=JSON.parse(message.text)
     if(message.type == "offer")
     {
         createanswer(memberId,message.offer)
@@ -88,7 +148,7 @@ let createPeerConnection = async (memberId) =>
         peerconnection.onicecandidate = async (event) => {
             if(event.candidate){
                 console.log("New ICE candidate: ", event.candidate)
-                client.sendMessageToPeer({text:JSON.stringify({"type":"candidate","candidate":event.candidate})},memberId)
+                client.sendMessage({"type":"candidate","candidate":event.candidate,'target_id':memberId,'source_id':Member_Id})
             }
         }
 
@@ -104,7 +164,8 @@ let createoffer = async(memberId) =>
 
 
         console.log("offer",offer)
-        client.sendMessageToPeer({text:JSON.stringify({"type":"offer","offer":offer})},memberId)
+        console.log("type",typeof Member_Id)
+        client.sendMessage({"type":"offer","offer":offer,"target_id":memberId,'source_id':Member_Id})
 
     } 
     
@@ -117,23 +178,23 @@ let createanswer = async(memberId,offer) =>
         await peerconnection.setLocalDescription(answer)
 
         console.log("asnswer",answer)
-        client.sendMessageToPeer({text:JSON.stringify({"type":"answer","answer":answer})},memberId)
+        client.sendMessage({"type":"answer","answer":answer,"target_id":memberId,'source_id':Member_Id})
 
     }
 
 let addanswer =async (answer) => {
-    if(!peerconnection.cuurentRemoteDescription)
+    if(!peerconnection.currentRemoteDescription)
     {
        peerconnection.setRemoteDescription(answer)
     }
 }
 
-let leaveChannel = async () => {
-    await channel.leave()
-    await client.logout()
-}
+//let leaveChannel = async () => {
+//    await channel.leave()
+//    await client.logout()
+//}
 
-window.addEventListener("beforeunload",leaveChannel)
+//window.addEventListener("beforeunload",leaveChannel)
 
 
 init()
